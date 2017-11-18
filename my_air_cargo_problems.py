@@ -170,8 +170,21 @@ class AirCargoProblem(Problem):
         :param action: Action applied
         :return: resulting state after action
         """
-        # TODO implement
         new_state = FluentState([], [])
+        prev_state = decode_state(state, self.state_map)
+        # check prev state for fluent membership
+        # adding only if effects of action permit it
+        for fluent in prev_state.pos not in action.effect_rem:
+            new_state.pos.append(fluent)
+        for fluent in prev_state.neg not in action.effect_add:
+            new_state.neg.append(fluent)
+        # add fluent membership based on effects
+        # if not already applied to new state
+        for fluent in action.effect_add not in new_state.pos:
+            new_state.pos.append(fluent)
+        for fluent in action.effect_rem not in new_state.neg:
+            new_state.neg.append(fluent)
+
         return encode_state(new_state, self.state_map)
 
     def goal_test(self, state: str) -> bool:
