@@ -13,7 +13,8 @@ from functools import lru_cache
 
 
 class AirCargoProblem(Problem):
-    def __init__(self, cargos, planes, airports, initial: FluentState, goal: list):
+    def __init__(self, cargos, planes, airports,
+                 initial: FluentState, goal: list):
         """
 
         :param cargos: list of str
@@ -37,10 +38,12 @@ class AirCargoProblem(Problem):
 
     def get_actions(self):
         """
-        This method creates concrete actions (no variables) for all actions in the problem
-        domain action schema and turns them into complete Action objects as defined in the
-        aimacode.planning module. It is computationally expensive to call this method directly;
-        however, it is called in the constructor and the results cached in the `actions_list` property.
+        This method creates concrete actions (no variables) for all actions in
+        the problem domain action schema and turns them into complete Action
+        objects as defined in the aimacode.planning module. It is
+        computationally expensive to call this method directly; however, it is
+        called in the constructor and the results cached in the `actions_list`
+        property.
 
         Returns:
         ----------
@@ -48,11 +51,14 @@ class AirCargoProblem(Problem):
             list of Action objects
         """
 
-        # TODO create concrete Action objects based on the domain action schema for: Load, Unload, and Fly
-        # concrete actions definition: specific literal action that does not include variables as with the schema
-        # for example, the action schema 'Load(c, p, a)' can represent the concrete actions 'Load(C1, P1, SFO)'
-        # or 'Load(C2, P2, JFK)'.  The actions for the planning problem must be concrete because the problems in
-        # forward search and Planning Graphs must use Propositional Logic
+        # TODO create concrete Action objects based on the domain action schema
+        # for: Load, Unload, and Fly concrete actions definition: specific
+        # literal action that does not include variables as with the schema
+        # for example, the action schema 'Load(c, p, a)' can represent the
+        # concrete actions 'Load(C1, P1, SFO)' or 'Load(C2, P2, JFK)'.  The
+        # actions for the planning problem must be concrete because the
+        # problems in forward search and Planning Graphs must use Propositional
+        # Logic
 
         def load_actions():
             """Create all concrete Load actions and return a list
@@ -60,7 +66,19 @@ class AirCargoProblem(Problem):
             :return: list of Action objects
             """
             loads = []
-            # TODO create all load ground actions from the domain Load action
+            for a in self.airports:
+                for p in self.planes:
+                    for c in self.cargos:
+                        precond_pos = [expr("At({}, {})".format(p, a)),
+                                       expr("At({}, {})".format(c, a)), ]
+                        precond_neg = []
+                        effect_add = [expr("In({}, {})".format(c, p))]
+                        effect_rem = [expr("At({}, {})".format(c, a))]
+                        load = Action(
+                            expr("Load({}, {}, {})".format(c, p, a)),
+                            [precond_pos, precond_neg],
+                            [effect_add, effect_rem])
+                        loads.append(load)
             return loads
 
         def unload_actions():
@@ -69,7 +87,19 @@ class AirCargoProblem(Problem):
             :return: list of Action objects
             """
             unloads = []
-            # TODO create all Unload ground actions from the domain Unload action
+            for a in self.airports:
+                for p in self.planes:
+                    for c in self.cargos:
+                        precond_pos = [expr("At({}, {})".format(p, a)),
+                                       expr("In({}, {})".format(c, p)), ]
+                        precond_neg = []
+                        effect_add = [expr("At({}, {})".format(c, a))]
+                        effect_rem = [expr("In({}, {})".format(c, p))]
+                        unload = Action(
+                            expr("Unload({}, {}, {})".format(c, p, a)),
+                            [precond_pos, precond_neg],
+                            [effect_add, effect_rem])
+                        unloads.append(unload)
             return unloads
 
         def fly_actions():
@@ -82,14 +112,14 @@ class AirCargoProblem(Problem):
                 for to in self.airports:
                     if fr != to:
                         for p in self.planes:
-                            precond_pos = [expr("At({}, {})".format(p, fr)),
-                                           ]
+                            precond_pos = [expr("At({}, {})".format(p, fr)), ]
                             precond_neg = []
                             effect_add = [expr("At({}, {})".format(p, to))]
                             effect_rem = [expr("At({}, {})".format(p, fr))]
-                            fly = Action(expr("Fly({}, {}, {})".format(p, fr, to)),
-                                         [precond_pos, precond_neg],
-                                         [effect_add, effect_rem])
+                            fly = Action(
+                                expr("Fly({}, {}, {})".format(p, fr, to)),
+                                [precond_pos, precond_neg],
+                                [effect_add, effect_rem])
                             flys.append(fly)
             return flys
 
@@ -103,8 +133,32 @@ class AirCargoProblem(Problem):
             e.g. 'FTTTFF'
         :return: list of Action objects
         """
-        # TODO implement
+        # create a propositional logic kb handle
+        kb = PropKB()
+        # inform kb of positive sentence clauses
+        kb.tell(decode_state(state, self.state_map).pos_sentence())
+
         possible_actions = []
+        for action in self.actions_list:
+            # all actions are initially assumed as executable
+            executable = True
+            # check that preconditions for the action are met
+            # if a positive precondition, the absence
+            # of any of the action's clauses in kb
+            # indicates an unexecutable action
+            for clause in action.precond_pos:
+                if clause not in kb.clauses:
+                    executable = False
+                    break
+            # if a negative precondition, membership
+            # of any of the actions clauses in kb
+            # indicates an unexecutable action
+            for clause in action.precond_neg:
+                if clause in kb.clauses:
+                    executable = False
+                    break
+            if executable:
+                possible_actions.append(action)
         return possible_actions
 
     def result(self, state: str, action: Action):
@@ -169,8 +223,7 @@ def air_cargo_p1() -> AirCargoProblem:
     pos = [expr('At(C1, SFO)'),
            expr('At(C2, JFK)'),
            expr('At(P1, SFO)'),
-           expr('At(P2, JFK)'),
-           ]
+           expr('At(P2, JFK)'), ]
     neg = [expr('At(C2, SFO)'),
            expr('In(C2, P1)'),
            expr('In(C2, P2)'),
@@ -178,12 +231,10 @@ def air_cargo_p1() -> AirCargoProblem:
            expr('In(C1, P1)'),
            expr('In(C1, P2)'),
            expr('At(P1, JFK)'),
-           expr('At(P2, SFO)'),
-           ]
+           expr('At(P2, SFO)'), ]
     init = FluentState(pos, neg)
     goal = [expr('At(C1, JFK)'),
-            expr('At(C2, SFO)'),
-            ]
+            expr('At(C2, SFO)'), ]
     return AirCargoProblem(cargos, planes, airports, init, goal)
 
 
