@@ -326,7 +326,7 @@ class PlanningGraph():
             symbol_set.add(s_node.symbol)
         # add None to each set for iterating later over
         # potentially unequal pos and neg preconditions of actions
-        map(lambda symbol_set: symbol_set.add(None), 
+        map(lambda symbol_set: symbol_set.add(None),
             [symbols_pos, symbols_neg])
 
         # find applicable actions
@@ -385,10 +385,10 @@ class PlanningGraph():
 
         self.s_levels.append(set())
         # define previous a level in accordance with
-        # i.e. S0 prev to A0, S1 prev to A1, ...
+        # i.e. A0 prev to S1, A1 prev to S2, ...
         prev_a_level = self.a_levels[level - 1]
         # the effnodes of each a_node in the prev level
-        # dictate the literals to be part of the new S level
+        # dictate the s nodes to be part of the new S level
         for a_node in prev_a_level:
             for s_node in a_node.effnodes:
                 s_node.parents.add(a_node)
@@ -451,26 +451,35 @@ class PlanningGraph():
         :param node_a2: PgNode_a
         :return: bool
         """
-        # TODO test for Inconsistent Effects between nodes
+        mutex_pairs = [('effect_add', 'effect_rem')]
+        return self.cross_intersection(node_a1.action, node_a2.action,
+                                       mutex_pairs)
+
+    def cross_intersection(self, action_a: Action, action_b: Action,
+                           mutex_pairs) -> bool:
+        """
+        Where X, Y in mutex_pairs and X neq Y,
+        return True if there is a common element of the set X of an
+        action A and the set Y of an action B
+        :param action_a: Action
+        :param action_b: Action
+        :param attributes: tuple of strings
+        :return: bool
+        """
+        # return a set of attributes 'attr' from x
+        attrs_set = (lambda x, attr: set(getattr(x, attr)))
+        for attr in mutex_pairs:
+            intersection = {(attrs_set(action_a, attr[0]) &
+                             attrs_set(action_b, attr[1])) |
+                            (attrs_set(action_a, attr[1]) &
+                             attrs_set(action_b, attr[0]))}
+            if intersection:
+                return True
         return False
-    
-    def negated_effects(action_1: Action, action_2: Action) -> bool:
-        """
-        Takes a pair of action nodes and tests for the effects of one
-        negating the other
-        """
-        negated = [effect for effect in action_1.effect_add 
-                   if effect in action_2.effect_rem]
 
-        if negated:
-            return False
-        else:
-
-        return action_1.effect_add
-    
     def interference_mutex(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
         """
-        Test a pair of actions for mutual exclusion, returning True if the 
+        Test a pair of actions for mutual exclusion, returning True if the
         effect of one action is the negation of a precondition of the other.
 
         HINT: The Action instance associated with an action node is accessible
@@ -482,8 +491,10 @@ class PlanningGraph():
         :param node_a2: PgNode_a
         :return: bool
         """
-        # TODO test for Interference between nodes
-        return False
+        mutex_pairs = [('effect_add', 'precond_neg'),
+                       ('effect_rem', 'precond_pos')]
+        return self.cross_intersection(node_a1.action, node_a2.action,
+                                       mutex_pairs)
 
     def competing_needs_mutex(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
         """
@@ -495,9 +506,9 @@ class PlanningGraph():
         :param node_a2: PgNode_a
         :return: bool
         """
-
-        # TODO test for Competing Needs between nodes
-        return False
+        mutex_pairs = [('precond_pos', 'precond_neg')]
+        return self.cross_intersection(node_a1.action, node_a2.action,
+                                       mutex_pairs)
 
     def update_s_mutex(self, nodeset: set):
         """ Determine and update sibling mutual exclusion for S-level nodes
