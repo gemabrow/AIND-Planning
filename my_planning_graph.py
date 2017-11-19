@@ -303,20 +303,65 @@ class PlanningGraph():
         :return:
             adds A nodes to the current level in self.a_levels[level]
         """
-        # TODO add action A level to the planning graph as described in the Russell-Norvig text
+        # add action A level to the planning graph as described in the
+        # Russell-Norvig text
         # 1. determine what actions to add and create those PgNode_a objects
         # 2. connect the nodes to the previous S literal level
-        # for example, the A0 level will iterate through all possible actions for the problem and add a PgNode_a to a_levels[0]
-        #   set iff all prerequisite literals for the action hold in S0.  This can be accomplished by testing
-        #   to see if a proposed PgNode_a has prenodes that are a subset of the previous S level.  Once an
-        #   action node is added, it MUST be connected to the S node instances in the appropriate s_level set.
-        
+        #   for example, the A0 level will iterate through all possible
+        #   actions for the problem and add a PgNode_a to a_levels[0]
+        #   set iff all prerequisite literals for the action hold in S0.  This
+        #   can be accomplished by testing to see if a proposed PgNode_a has
+        #   prenodes that are a subset of the previous S level. Once an action
+        #   node is added, it MUST be connected to the S node instances in the
+        #   appropriate s_level set.
+
         self.a_levels.append(set())
+        # define previous s level in accordance with above
+        # i.e. S0 prev to A0, S1 prev to A1, ...
+        prev_s_level = self.s_levels[level]
+        
+        symbols_pos, symbols_neg = set(), set()
+        for s_node in prev_s_level:
+            symbol_set = symbols_pos if s_node.is_pos else symbols_neg
+            symbol_set.add(s_node.symbol)
+        # add None to each set for iterating later over
+        # potentially unequal pos and neg preconditions of actions
+        map(lambda symbol_set: symbol_set.add(None), 
+            [symbols_pos, symbols_neg])
+
+        # find applicable actions
         for action in self.all_actions:
-            a_node = PgNode_a(action)
-            pass
-
-
+            executable = True
+            for p_p, p_n in map(None, action.precond_pos, action.precond_neg):
+                if p_p not in symbols_pos or p_n not in symbols_neg:
+                    executable = False
+                    break
+            if executable:
+                a_node = PgNode_a(action)
+                self.a_levels[level].add(a_node)
+        
+        # connect s nodes and a nodes
+        for a_node in self.a_levels[level]:
+            action_precond = zip(a_node.action.precond_neg,
+                                 a_node.action.precond_pos)
+            for s_node in prev_s_level:
+                if s_node.literal in action_precond:
+                    s_node.children.add(a_node)
+                    a_node.parents.add(s_node)
+        
+        # for action in self.all_actions:
+        #     a_node = PgNode_a(action)
+        #     # test if action's preconditions satisfied by
+        #     # literals in prev level
+        #     if a_node.prenodes.issubset(prev_s_level):
+        #         # preconditions satisfied so connect all S nodes and
+        #         # this a_node via set addition to parents/children
+        #         for s_node in prev_s_level:
+        #             a_node.parents.add(s_node)
+        #             s_node.children.add(a_node)
+        #         # add a_node to targeted a_level
+        #         self.a_levels[level].add(a_node)
+ 
     def add_literal_level(self, level):
         """ add an S (literal) level to the Planning Graph
 
@@ -329,12 +374,27 @@ class PlanningGraph():
         # TODO add literal S level to the planning graph as described in the Russell-Norvig text
         # 1. determine what literals to add
         # 2. connect the nodes
-        # for example, every A node in the previous level has a list of S nodes in effnodes that represent the effect
-        #   produced by the action.  These literals will all be part of the new S level.  Since we are working with sets, they
-        #   may be "added" to the set without fear of duplication.  However, it is important to then correctly create and connect
-        #   all of the new S nodes as children of all the A nodes that could produce them, and likewise add the A nodes to the
-        #   parent sets of the S nodes
-         
+        # for example, every A node in the previous level has a list of S nodes
+        #   in effnodes that represent the effect produced by the action.
+        #   These literals will all be part of the new S level. Since we are
+        #   working with sets, they may be "added" to the set without fear of
+        #   duplication. However, it is important to then correctly create and
+        #   connect all of the new S nodes as children of all the A nodes that
+        #   could produce them, and likewise add the A nodes to the parent sets
+        #   of the S nodes
+
+        self.s_levels.append(set())
+        # define previous a level in accordance with
+        # i.e. S0 prev to A0, S1 prev to A1, ...
+        prev_a_level = self.a_levels[level - 1]
+        # the effnodes of each a_node in the prev level
+        # dictate the literals to be part of the new S level
+        for a_node in prev_a_level:
+            for s_node in a_node.effnodes:
+                s_node.parents.add(a_node)
+                a_node.children.add(s_node)
+                self.s_levels[level].add(s_node)
+
     def update_a_mutex(self, nodeset):
         """ Determine and update sibling mutual exclusion for A-level nodes
 
@@ -393,7 +453,21 @@ class PlanningGraph():
         """
         # TODO test for Inconsistent Effects between nodes
         return False
+    
+    def negated_effects(action_1: Action, action_2: Action) -> bool:
+        """
+        Takes a pair of action nodes and tests for the effects of one
+        negating the other
+        """
+        negated = [effect for effect in action_1.effect_add 
+                   if effect in action_2.effect_rem]
 
+        if negated:
+            return False
+        else:
+
+        return action_1.effect_add
+    
     def interference_mutex(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
         """
         Test a pair of actions for mutual exclusion, returning True if the 
