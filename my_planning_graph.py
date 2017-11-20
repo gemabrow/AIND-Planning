@@ -298,8 +298,9 @@ class PlanningGraph():
         """ add an A (action) level to the Planning Graph
 
         :param level: int
-            the level number alternates S0, A0, S1, A1, S2, .... etc the level number is also used as the
-            index for the node set lists self.a_levels[] and self.s_levels[]
+            the level number alternates S0, A0, S1, A1, S2, .... etc the level
+            number is also used as the index for the node set lists
+            self.a_levels[] and self.s_levels[]
         :return:
             adds A nodes to the current level in self.a_levels[level]
         """
@@ -319,49 +320,23 @@ class PlanningGraph():
         # define previous s level in accordance with above
         # i.e. S0 prev to A0, S1 prev to A1, ...
         prev_s_level = self.s_levels[level]
-        
-        symbols_pos, symbols_neg = set(), set()
-        for s_node in prev_s_level:
-            symbol_set = symbols_pos if s_node.is_pos else symbols_neg
-            symbol_set.add(s_node.symbol)
-        # add None to each set for iterating later over
-        # potentially unequal pos and neg preconditions of actions
-        map(lambda symbol_set: symbol_set.add(None),
-            [symbols_pos, symbols_neg])
 
         # find applicable actions
         for action in self.all_actions:
-            executable = True
-            for p_p, p_n in map(None, action.precond_pos, action.precond_neg):
-                if p_p not in symbols_pos or p_n not in symbols_neg:
-                    executable = False
-                    break
-            if executable:
-                a_node = PgNode_a(action)
-                self.a_levels[level].add(a_node)
-        
-        # connect s nodes and a nodes
-        for a_node in self.a_levels[level]:
-            action_precond = zip(a_node.action.precond_neg,
-                                 a_node.action.precond_pos)
             for s_node in prev_s_level:
-                if s_node.literal in action_precond:
-                    s_node.children.add(a_node)
+                # look at relevant preconditions of action
+                # based on if s_node is negated or not
+                precond = action.precond_pos\
+                          if s_node.is_pos\
+                          else action.precond_neg
+                # if symbol is in preconditions,
+                # s_node is a prenode of proposed a_node
+                if s_node.symbol in precond:
+                    a_node = PgNode_a(action)
                     a_node.parents.add(s_node)
-        
-        # for action in self.all_actions:
-        #     a_node = PgNode_a(action)
-        #     # test if action's preconditions satisfied by
-        #     # literals in prev level
-        #     if a_node.prenodes.issubset(prev_s_level):
-        #         # preconditions satisfied so connect all S nodes and
-        #         # this a_node via set addition to parents/children
-        #         for s_node in prev_s_level:
-        #             a_node.parents.add(s_node)
-        #             s_node.children.add(a_node)
-        #         # add a_node to targeted a_level
-        #         self.a_levels[level].add(a_node)
- 
+                    s_node.children.add(a_node)
+                    self.a_levels[level].add(a_node)
+
     def add_literal_level(self, level):
         """ add an S (literal) level to the Planning Graph
 
@@ -460,7 +435,7 @@ class PlanningGraph():
         """
         Where X, Y in mutex_pairs and X neq Y,
         return True if there is a common element of the set X of an
-        action A and the set Y of an action B
+        action A and the set Y of an action B OR Y of A and X of B
         :param action_a: Action
         :param action_b: Action
         :param attributes: tuple of strings
@@ -468,11 +443,11 @@ class PlanningGraph():
         """
         # return a set of attributes 'attr' from x
         attrs_set = (lambda x, attr: set(getattr(x, attr)))
-        for attr in mutex_pairs:
-            intersection = {(attrs_set(action_a, attr[0]) &
-                             attrs_set(action_b, attr[1])) |
-                            (attrs_set(action_a, attr[1]) &
-                             attrs_set(action_b, attr[0]))}
+        for attr_x, attr_y in mutex_pairs:
+            intersection = set((attrs_set(action_a, attr_x) &
+                                attrs_set(action_b, attr_y)) |
+                               (attrs_set(action_a, attr_y) &
+                                attrs_set(action_b, attr_x)))
             if intersection:
                 return True
         return False
@@ -506,9 +481,16 @@ class PlanningGraph():
         :param node_a2: PgNode_a
         :return: bool
         """
-        mutex_pairs = [('precond_pos', 'precond_neg')]
-        return self.cross_intersection(node_a1.action, node_a2.action,
-                                       mutex_pairs)
+        # mutex_pairs = [('precond_pos', 'precond_neg')]
+        # return self.cross_intersection(node_a1.action, node_a2.action,
+        #                                mutex_pairs)
+        s_nodes_1, s_nodes_2 = self._larger_inner_loop_(node_a1.parents,
+                                                        node_a2.parents)
+        for clause_a in s_nodes_1:
+            for clause_b in s_nodes_2:
+                if clause_a.is_mutex(clause_b):
+                    return True
+        return False
 
     def update_s_mutex(self, nodeset: set):
         """ Determine and update sibling mutual exclusion for S-level nodes
@@ -526,7 +508,8 @@ class PlanningGraph():
         nodelist = list(nodeset)
         for i, n1 in enumerate(nodelist[:-1]):
             for n2 in nodelist[i + 1:]:
-                if self.negation_mutex(n1, n2) or self.inconsistent_support_mutex(n1, n2):
+                if (self.negation_mutex(n1, n2) or
+                        self.inconsistent_support_mutex(n1, n2)):
                     mutexify(n1, n2)
 
     def negation_mutex(self, node_s1: PgNode_s, node_s2: PgNode_s) -> bool:
@@ -562,14 +545,14 @@ class PlanningGraph():
         :param node_s2: PgNode_s
         :return: bool
         """
-        a_nodes_s1 = node_s1.parents
-        a_nodes_s2 = node_s2.parents
-        for preconditon_s1 in a_nodes_s1:
-            for precondition_s2 in a_nodes_s2:
+        a_nodes_1, a_nodes_2 = self._larger_inner_loop_(node_s1.parents,
+                                                        node_s2.parents)
+        for preconditon_1 in a_nodes_1:
+            for precondition_2 in a_nodes_2:
                 # if a non-mutex pair of actions exist,
                 # then a pairwise-action exists such that
                 # the literals can exist at the same time
-                if not preconditon_s1.is_mutex(precondition_s2):
+                if not preconditon_1.is_mutex(precondition_2):
                     return False
         # if no pairwise-actions from the two literals
         # can be achieved at the same time,
@@ -578,27 +561,33 @@ class PlanningGraph():
         # then the two literal nodes are mutex
         return True
 
+    def _larger_inner_loop_(self, larger, smaller):
+        if len(larger) < len(smaller):
+            larger, smaller = smaller, larger
+        return smaller, larger
+
     def h_levelsum(self) -> int:
-        """The sum of the level costs of the individual goals (admissible if goals independent)
+        """The sum of the level costs of the individual goals
+        (admissible if goals independent)
 
         :return: int
         """
         level_sum = 0
-        goals_remaining = {goal for goal in self.problem.goal}
+        remaining_goals = {goal for goal in self.problem.goal}
 
         # for each goal in the problem, determine the level cost
-        for level, s_level in enumerate(self.s_levels):
+        for s_level in self.s_levels:
+            level_sum += 1
             for s_node in s_level:
-                literal = s_node.literal
+                symbol = s_node.symbol
                 # check if literal in goal
-                if literal in goals_remaining:
-                    goals_remaining.discard(literal)
-                    level_sum += level
-                    # if all goals found, break inner loop 
-                    if not goals_remaining:
+                if symbol in remaining_goals:
+                    remaining_goals.discard(symbol)
+                    # if all goals found, break inner loop
+                    if not remaining_goals:
                         break
-            # if all goals found, break outer loop 
-            if not goals_remaining:
+            # if all goals found, break outer loop
+            if not remaining_goals:
                 break
 
         return level_sum
