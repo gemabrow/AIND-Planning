@@ -2,7 +2,7 @@ from aimacode.planning import Action
 from aimacode.search import Problem
 from aimacode.utils import expr
 from lp_utils import decode_state
-
+from collections import defaultdict
 
 class PgNode():
     """Base class for planning graph nodes.
@@ -567,12 +567,14 @@ class PlanningGraph():
         for preconditon_s1 in a_nodes_s1:
             for precondition_s2 in a_nodes_s2:
                 # if a non-mutex pair of actions exist,
-                # then an action-pair exists such that the state
-                # literals may exist at the same time
+                # then a pairwise-action exists such that
+                # the literals can exist at the same time
                 if not preconditon_s1.is_mutex(precondition_s2):
                     return False
-        # if no action-pairs can achieve the two literals at the same time
-        # then all action-pairs are mutex. if all action-pairs are mutex,
+        # if no pairwise-actions from the two literals
+        # can be achieved at the same time,
+        # then all pairwise-actions are mutex.
+        # if all pairwise-actions of the two literals are mutex,
         # then the two literal nodes are mutex
         return True
 
@@ -582,6 +584,21 @@ class PlanningGraph():
         :return: int
         """
         level_sum = 0
-        # TODO implement
-        # for each goal in the problem, determine the level cost, then add them together
+        goals_remaining = {goal for goal in self.problem.goal}
+
+        # for each goal in the problem, determine the level cost
+        for level, s_level in enumerate(self.s_levels):
+            for s_node in s_level:
+                literal = s_node.literal
+                # check if literal in goal
+                if literal in goals_remaining:
+                    goals_remaining.discard(literal)
+                    level_sum += level
+                    # if all goals found, break inner loop 
+                    if not goals_remaining:
+                        break
+            # if all goals found, break outer loop 
+            if not goals_remaining:
+                break
+
         return level_sum
